@@ -2,28 +2,37 @@
 
 > A fast, AI-assisted and rule-based web chatbot that helps everyday users understand cybersecurity threats, practice safe online habits, and receive immediate step-by-step triage during security emergencies.
 
+[![Live Link](https://img.shields.io/badge/Live%20Demo-GitHub%20Pages-06b6d4?style=for-the-badge&logo=github)](https://ajojosee.github.io/cyberguard-bot/)
+[![GitHub Repo](https://img.shields.io/badge/GitHub-Repository-181717?style=for-the-badge&logo=github)](https://github.com/AjoJosee/cyberguard-bot)
 [![Next.js](https://img.shields.io/badge/Next.js-16.4-black?logo=next.js)](https://nextjs.org/)
 [![React](https://img.shields.io/badge/React-19.3-blue?logo=react)](https://react.dev/)
-[![TailwindCSS](https://img.shields.io/badge/TailwindCSS-v4-38bdf8?logo=tailwindcss)](https://tailwindcss.com/)
 [![xAI Grok](https://img.shields.io/badge/Grok-xAI%20API-000000?logo=x)](https://x.ai/)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 ---
 
-## 🔒 Privacy & Safety Guarantee
+## 🌐 Public Live Link
+
+- **Live Chatbot Application**: **[https://ajojosee.github.io/cyberguard-bot/](https://ajojosee.github.io/cyberguard-bot/)**
+- **GitHub Repository**: **[https://github.com/AjoJosee/cyberguard-bot](https://github.com/AjoJosee/cyberguard-bot)**
+
+*Accessible immediately on both desktop and mobile devices without requiring any login or signup.*
+
+---
+
+## 🔒 Privacy & Safety Notice
 
 - **Zero Credential Collection**: CyberGuard will **never** request, store, or log passwords, One-Time Passwords (OTPs), PINs, credit card numbers, or sensitive personal data.
-- **Client & Server-Side Interception**: Proactive regex filters detect and redact sensitive inputs (OTPs, card patterns, passwords) *before* they are sent to any API or backend.
+- **Client & Server-Side Interception**: Proactive regex filters detect and redact sensitive inputs (OTPs, card patterns, passwords) *before* they are sent to any API or backend. If a user pastes an OTP or password, the bot blocks transmission and warns the user immediately.
 - **Purely Fictional Scenarios**: All case examples and tests use fictional representations.
-- **Secure Secrets Management**: API keys and environment variables are excluded via `.gitignore` (`.env.local`) and processed only on secure backend endpoints.
+- **Secure Secrets Management**: API keys and environment variables are excluded via `.gitignore` (`.env`, `.env.local`, `.env.*`) and never exposed in version control or public repositories.
 
 ---
 
-## 🌟 Key Features
+## 🌟 Key Features & Capabilities
 
-### 1. Hybrid Intelligence: Grok AI + Instant Knowledge Base
-- **xAI Grok Integration**: Powered by Grok (`grok-2-latest`, `grok-2-mini`, or `grok-beta`) for contextual, nuanced, and adaptive answers with low latency and streaming responses.
-- **Instant Local Knowledge Engine**: Provides instantaneous (<50ms) structured answers even when offline or if no API key is configured.
+### 1. Hybrid Intelligence: Grok AI + Instant Knowledge Engine
+- **xAI Grok Integration**: Connect your Grok API key (`console.x.ai`) via `.env.local` or directly through the secure in-app settings modal. Supports `grok-2-latest`, `grok-2-mini` (ultra-fast), and `grok-beta`.
+- **Instant Local Knowledge Engine**: Provides instantaneous (<50ms) structured answers across all topics and emergencies even when offline or without an API key.
 - **Graceful Fallbacks**: If external API limits occur, the assistant seamlessly switches to the expert local rule base without disruption.
 
 ### 2. High-Concern Emergency Triage Playbooks
@@ -45,18 +54,18 @@ Dedicated, one-click action checklists for urgent security situations:
 - **CISA Security Resources**: [cisa.gov](https://www.cisa.gov)
 - **Have I Been Pwned**: [haveibeenpwned.com](https://haveibeenpwned.com)
 - **VirusTotal Scanner**: [virustotal.com](https://www.virustotal.com)
-- **IdentityTheft.gov**: [identitytheft.gov](https://www.identitytheft.gov)
+- **IdentityTheft.gov**: [identitytheft.gov](https://identitytheft.gov)
 
 ---
 
-## 🚀 Getting Started
+## 🛠️ Local Development & Setup
 
 ### Prerequisites
 - Node.js 18+ (tested with Node 24)
 - npm or yarn
-- An xAI Grok API key from [console.x.ai](https://console.x.ai) (optional; the app falls back to the built-in rule engine if omitted)
+- An xAI Grok API key from [console.x.ai](https://console.x.ai)
 
-### Installation
+### Step-by-Step Setup
 
 1. **Clone the repository**:
    ```bash
@@ -86,24 +95,10 @@ Dedicated, one-click action checklists for urgent security situations:
    ```
    Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-5. **Build for production**:
+5. **Build for GitHub Pages**:
    ```bash
-   npm run build
-   npm run start
+   npm run build:gh-pages
    ```
-
----
-
-## 🌐 Deployment to Vercel / Netlify / Render
-
-### One-Click Vercel Deployment
-1. Push your repository to GitHub.
-2. Import the repository in [Vercel](https://vercel.com).
-3. In the project settings, add the environment variable:
-   - `GROK_API_KEY`: Your xAI API key (`xai-...`)
-4. Click **Deploy**. Your app will be live with full server-side API security.
-
-*(Users can also test or run their own API key via the in-app Settings modal, where keys remain strictly in browser session memory.)*
 
 ---
 
