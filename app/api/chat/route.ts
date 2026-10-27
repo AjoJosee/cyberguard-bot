@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { checkSensitiveInput } from '@/lib/security-rules';
 import {
-  GROK_SYSTEM_PROMPT,
+  GROQ_SYSTEM_PROMPT,
   getRuleBasedResponse,
   getFallbackResponse,
 } from '@/lib/knowledge';
-
 
 interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
@@ -14,11 +13,20 @@ interface ChatMessage {
 
 // GET handler to check server status and whether an environment key is set
 export async function GET() {
-  const hasServerKey = Boolean(process.env.GROK_API_KEY || process.env.XAI_API_KEY);
+  const hasServerKey = Boolean(
+    process.env.GROQ_API_KEY ||
+    process.env.GROK_API_KEY ||
+    process.env.XAI_API_KEY
+  );
   return NextResponse.json({
     status: 'ok',
+    provider: 'Groq',
     hasServerKey,
-    supportedModels: ['grok-2-latest', 'grok-2-mini', 'grok-beta'],
+    supportedModels: [
+      'llama-3.3-70b-versatile',
+      'llama-3.1-8b-instant',
+      'mixtral-8x7b-32768',
+    ],
   });
 }
 
@@ -26,7 +34,11 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { messages = [], model = 'grok-2-latest', forceRuleEngine = false } = body;
+    const {
+      messages = [],
+      model = 'llama-3.3-70b-versatile',
+      forceRuleEngine = false,
+    } = body;
 
     const userMessages = messages.filter((m: ChatMessage) => m.role === 'user');
     const latestUserMsg = userMessages.length > 0 ? userMessages[userMessages.length - 1].content : '';
@@ -51,59 +63,65 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 3. Resolve Grok API Key (Backend .env has priority, client header fallback)
+    // 3. Resolve Groq API Key (Backend .env has priority, client header fallback)
     const apiKey =
+      process.env.GROQ_API_KEY ||
       process.env.GROK_API_KEY ||
       process.env.XAI_API_KEY ||
+      req.headers.get('x-groq-api-key') ||
       req.headers.get('x-grok-api-key') ||
       '';
 
-    // 4. If no Grok API Key is provided, use the fast rule-based engine
+    // 4. If no API Key is provided, use the fast rule-based engine
     if (!apiKey || apiKey.trim() === '') {
       const ruleResponse = getRuleBasedResponse(latestUserMsg) || getFallbackResponse(latestUserMsg);
       return NextResponse.json({
         role: 'assistant',
         content: ruleResponse,
         source: 'rule-engine',
-        notice: 'Response generated via built-in cybersecurity knowledge engine (Add your Grok API key in .env or settings for AI mode).',
+        notice: 'Response generated via built-in cybersecurity knowledge engine (Add your Groq API key in .env or settings for AI mode).',
       });
     }
 
-    // 5. Call xAI Grok API (OpenAI-compatible chat completions)
-    const xaiPayload = {
-      model: model || 'grok-2-latest',
+    // Filter conversation history to valid user/assistant turns
+    const firstUserIndex = messages.findIndex((m: ChatMessage) => m.role === 'user');
+    const conversationTurns = firstUserIndex !== -1 ? messages.slice(firstUserIndex) : messages;
+
+    // 5. Call Groq API (OpenAI-compatible chat completions)
+    const groqPayload = {
+      model: model || 'llama-3.3-70b-versatile',
       messages: [
-        { role: 'system', content: GROK_SYSTEM_PROMPT },
-        ...messages.map((m: ChatMessage) => ({
+        { role: 'system', content: GROQ_SYSTEM_PROMPT },
+        ...conversationTurns.map((m: ChatMessage) => ({
           role: m.role,
           content: m.content,
         })),
       ],
-      temperature: 0.3, // Low temperature for high factual accuracy and consistency
-      max_tokens: 1000,
+      temperature: 0.3,
+      max_tokens: 1024,
       stream: true,
     };
 
-    const xaiResponse = await fetch('https://api.x.ai/v1/chat/completions', {
+    const groqResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${apiKey.trim()}`,
       },
-      body: JSON.stringify(xaiPayload),
+      body: JSON.stringify(groqPayload),
     });
 
-    if (!xaiResponse.ok) {
-      const errorText = await xaiResponse.text();
-      console.error('xAI API error:', xaiResponse.status, errorText);
+    if (!groqResponse.ok) {
+      const errorText = await groqResponse.text();
+      console.error('Groq API error:', groqResponse.status, errorText);
 
-      // Graceful fallback to rule-based engine if Grok API returns error/quota/auth issue
+      // Graceful fallback to rule-based engine with error notice
       const fallbackResponse = getRuleBasedResponse(latestUserMsg) || getFallbackResponse(latestUserMsg);
       return NextResponse.json({
         role: 'assistant',
         content: fallbackResponse,
         source: 'rule-engine-fallback',
-        warning: `Grok API returned status ${xaiResponse.status}. Served from CyberGuard local security knowledge base.`,
+        warning: `Groq API returned status ${groqResponse.status}. Served from CyberGuard local security knowledge base.`,
       });
     }
 
@@ -127,14 +145,14 @@ export async function POST(req: NextRequest) {
                 controller.enqueue(encoder.encode(delta));
               }
             } catch {
-              // Ignore partial JSON parse chunks
+              // Ignore partial chunks
             }
           }
         }
       },
     });
 
-    return new Response(xaiResponse.body?.pipeThrough(transformStream), {
+    return new Response(groqResponse.body?.pipeThrough(transformStream), {
       headers: {
         'Content-Type': 'text/plain; charset=utf-8',
         'Cache-Control': 'no-cache, no-transform',

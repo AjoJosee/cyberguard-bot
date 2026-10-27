@@ -1,12 +1,12 @@
 # 🛡️ CyberGuard AI — Cybersecurity Safety & Incident Assistant
 
-> A fast, AI-assisted and rule-based web chatbot that helps everyday users understand cybersecurity threats, practice safe online habits, and receive immediate step-by-step triage during security emergencies.
+> An ultra-fast, AI-assisted and rule-based web chatbot powered by **Groq LPU Inference** that helps everyday users understand cybersecurity threats, practice safe online habits, and receive immediate step-by-step triage during security emergencies.
 
 [![Live Link](https://img.shields.io/badge/Live%20Demo-GitHub%20Pages-06b6d4?style=for-the-badge&logo=github)](https://ajojosee.github.io/cyberguard-bot/)
 [![GitHub Repo](https://img.shields.io/badge/GitHub-Repository-181717?style=for-the-badge&logo=github)](https://github.com/AjoJosee/cyberguard-bot)
 [![Next.js](https://img.shields.io/badge/Next.js-16.4-black?logo=next.js)](https://nextjs.org/)
 [![React](https://img.shields.io/badge/React-19.3-blue?logo=react)](https://react.dev/)
-[![xAI Grok](https://img.shields.io/badge/Grok-xAI%20API-000000?logo=x)](https://x.ai/)
+[![Groq LPU](https://img.shields.io/badge/Groq-LPU%20Inference-f55036?logo=fastapi)](https://groq.com/)
 
 ---
 
@@ -15,7 +15,7 @@
 - **Live Chatbot Application**: **[https://ajojosee.github.io/cyberguard-bot/](https://ajojosee.github.io/cyberguard-bot/)**
 - **GitHub Repository**: **[https://github.com/AjoJosee/cyberguard-bot](https://github.com/AjoJosee/cyberguard-bot)**
 
-*Accessible immediately on both desktop and mobile devices without requiring any login or signup.*
+*Accessible immediately on both desktop and mobile devices without requiring any login.*
 
 ---
 
@@ -28,12 +28,21 @@
 
 ---
 
+## ⚡ Powered by Groq LPU AI
+
+CyberGuard connects to the high-speed **Groq LPU (Language Processing Unit)** API (`https://api.groq.com/openai/v1/chat/completions`), delivering streaming tokens at blistering speeds (up to 800+ tokens/sec):
+- `llama-3.3-70b-versatile` (Default — deep cybersecurity reasoning and factual instruction following)
+- `llama-3.1-8b-instant` (Ultra-fast response with sub-second time-to-first-token)
+- `mixtral-8x7b-32768` (High context capacity)
+
+---
+
 ## 🌟 Key Features & Capabilities
 
-### 1. Hybrid Intelligence: Grok AI + Instant Knowledge Engine
-- **xAI Grok Integration**: Connect your Grok API key (`console.x.ai`) via `.env.local` or directly through the secure in-app settings modal. Supports `grok-2-latest`, `grok-2-mini` (ultra-fast), and `grok-beta`.
+### 1. Hybrid Intelligence: Groq AI + Instant Knowledge Engine
+- **Groq API Integration**: Connect your Groq API key (`gsk_...` from [console.groq.com/keys](https://console.groq.com/keys)) via `.env.local` or directly through the in-app settings modal with live connection verification.
 - **Instant Local Knowledge Engine**: Provides instantaneous (<50ms) structured answers across all topics and emergencies even when offline or without an API key.
-- **Graceful Fallbacks**: If external API limits occur, the assistant seamlessly switches to the expert local rule base without disruption.
+- **Transparent Fallback & Diagnostics**: If the API key is invalid or rate limited, the exact error from Groq is presented alongside instant offline safety advice.
 
 ### 2. High-Concern Emergency Triage Playbooks
 Dedicated, one-click action checklists for urgent security situations:
@@ -63,7 +72,7 @@ Dedicated, one-click action checklists for urgent security situations:
 ### Prerequisites
 - Node.js 18+ (tested with Node 24)
 - npm or yarn
-- An xAI Grok API key from [console.x.ai](https://console.x.ai)
+- A free Groq API key from [console.groq.com/keys](https://console.groq.com/keys)
 
 ### Step-by-Step Setup
 
@@ -83,10 +92,10 @@ Dedicated, one-click action checklists for urgent security situations:
    ```bash
    cp .env.example .env.local
    ```
-   Edit `.env.local` and add your xAI Grok API key:
+   Edit `.env.local` and add your Groq API key:
    ```env
-   GROK_API_KEY=xai-your-api-key-here
-   GROK_MODEL=grok-2-latest
+   GROQ_API_KEY=gsk_your_groq_api_key_here
+   GROQ_MODEL=llama-3.3-70b-versatile
    ```
 
 4. **Run the development server**:

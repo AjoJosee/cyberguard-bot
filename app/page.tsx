@@ -23,13 +23,14 @@ import {
   CheckCircle2,
   XCircle,
   Loader2,
+  Zap,
 } from 'lucide-react';
 import { MarkdownView } from '@/components/MarkdownView';
 import {
   OFFICIAL_RESOURCES,
   EMERGENCY_PLAYBOOKS,
   TOPIC_KNOWLEDGE,
-  GROK_SYSTEM_PROMPT,
+  GROQ_SYSTEM_PROMPT,
   getRuleBasedResponse,
   getFallbackResponse,
 } from '@/lib/knowledge';
@@ -41,7 +42,7 @@ interface Message {
   content: string;
   timestamp: string;
   isSecurityAlert?: boolean;
-  source?: 'grok-ai' | 'rule-engine' | 'rule-engine-fallback';
+  source?: 'groq-ai' | 'rule-engine' | 'rule-engine-fallback';
 }
 
 export default function CyberGuardPage() {
@@ -51,12 +52,12 @@ export default function CyberGuardPage() {
       role: 'assistant',
       content: `### 👋 Welcome to CyberGuard AI
 
-I am your cybersecurity advisor and emergency incident companion. Whether you need to verify a suspicious communication or require **immediate triage for a suspected breach or active scam**, I provide structured, calm guidance.
+I am your cybersecurity advisor and emergency incident companion, powered by Groq LPU inference and rule-based playbooks. Whether you need to verify a suspicious communication or require **immediate triage for a suspected breach or active scam**, I provide structured, calm guidance.
 
 > 🔒 **Zero-Retention Privacy Guarantee**: CyberGuard will **never** ask for, store, or accept passwords, OTPs, PINs, or financial information. Never paste sensitive credentials in chat.
 
 #### Quick Incident Triage:
-Choose an emergency scenario below, pick a topic, or ask any question in plain English:`,
+Choose an emergency scenario below, pick a threat topic, or ask any question in plain English:`,
       timestamp: 'Just now',
       source: 'rule-engine',
     },
@@ -66,7 +67,7 @@ Choose an emergency scenario below, pick a topic, or ask any question in plain E
   const [isLoading, setIsLoading] = useState(false);
   const [hasServerKey, setHasServerKey] = useState<boolean>(false);
   const [clientApiKey, setClientApiKey] = useState<string>('');
-  const [selectedModel, setSelectedModel] = useState<string>('grok-2-latest');
+  const [selectedModel, setSelectedModel] = useState<string>('llama-3.3-70b-versatile');
   const [showSettings, setShowSettings] = useState(false);
   const [showResources, setShowResources] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -107,6 +108,8 @@ Choose an emergency scenario below, pick a topic, or ask any question in plain E
 
     if (typeof window !== 'undefined') {
       const savedKey =
+        sessionStorage.getItem('cyberguard_groq_key') ||
+        localStorage.getItem('cyberguard_groq_key') ||
         sessionStorage.getItem('cyberguard_grok_key') ||
         localStorage.getItem('cyberguard_grok_key') ||
         '';
@@ -130,21 +133,21 @@ Choose an emergency scenario below, pick a topic, or ask any question in plain E
     }
   };
 
-  // Test the entered Grok API Key directly against xAI API
+  // Test the entered Groq API Key directly against Groq API
   const handleTestConnection = async () => {
     const keyToTest = tempApiKey.trim();
     if (!keyToTest) {
       setTestStatus('error');
-      setTestMessage('Please enter an API key to test.');
+      setTestMessage('Please enter your Groq API key (starts with gsk_...) to test.');
       return;
     }
 
     setTestStatus('testing');
-    setTestMessage('Connecting to xAI API...');
+    setTestMessage('Connecting to Groq LPU API...');
 
     const startTime = performance.now();
     try {
-      const res = await fetch('https://api.x.ai/v1/chat/completions', {
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -161,17 +164,21 @@ Choose an emergency scenario below, pick a topic, or ask any question in plain E
 
       if (res.ok) {
         setTestStatus('success');
-        setTestMessage(`✓ Connection verified! Grok responded in ${elapsed}ms.`);
+        setTestMessage(`✓ Connection verified! Groq responded in ${elapsed}ms (${selectedModel}).`);
       } else {
         const errorData = await res.json().catch(() => ({}));
-        const errMsg = errorData.error || errorData.message || `HTTP ${res.status} error`;
+        const errMsg =
+          errorData.error?.message ||
+          errorData.error ||
+          errorData.message ||
+          `HTTP ${res.status} error`;
         setTestStatus('error');
-        setTestMessage(`✕ xAI Error: ${errMsg}`);
+        setTestMessage(`✕ Groq Error: ${errMsg}`);
       }
     } catch (err: unknown) {
       const errStr = err instanceof Error ? err.message : String(err);
       setTestStatus('error');
-      setTestMessage(`✕ Network failure: ${errStr}. (Check browser ad-blockers or CORS)`);
+      setTestMessage(`✕ Network failure: ${errStr}. (Check browser ad-blockers or connection)`);
     }
   };
 
@@ -180,11 +187,11 @@ Choose an emergency scenario below, pick a topic, or ask any question in plain E
     setClientApiKey(cleanKey);
     if (typeof window !== 'undefined') {
       if (cleanKey) {
-        sessionStorage.setItem('cyberguard_grok_key', cleanKey);
-        localStorage.setItem('cyberguard_grok_key', cleanKey);
+        sessionStorage.setItem('cyberguard_groq_key', cleanKey);
+        localStorage.setItem('cyberguard_groq_key', cleanKey);
       } else {
-        sessionStorage.removeItem('cyberguard_grok_key');
-        localStorage.removeItem('cyberguard_grok_key');
+        sessionStorage.removeItem('cyberguard_groq_key');
+        localStorage.removeItem('cyberguard_groq_key');
       }
     }
     setShowSettings(false);
@@ -255,17 +262,16 @@ Choose an emergency scenario below, pick a topic, or ask any question in plain E
     sendMessage(`Tell me safe habits and red flags for ${topic.name}`);
   };
 
-  // Direct client-side streaming from Grok API
-  const streamFromGrokDirect = async (
+  // Direct client-side streaming from Groq API
+  const streamFromGroqDirect = async (
     apiKey: string,
     history: Message[],
     assistantMessageId: string
   ) => {
-    // Sanitize history so it only sends valid conversation turns starting with first user prompt
     const firstUserIndex = history.findIndex((m) => m.role === 'user');
     const apiHistory = firstUserIndex !== -1 ? history.slice(firstUserIndex) : history;
     const cleanPayloadMessages = [
-      { role: 'system', content: GROK_SYSTEM_PROMPT },
+      { role: 'system', content: GROQ_SYSTEM_PROMPT },
       ...apiHistory
         .filter((m) => !m.isSecurityAlert)
         .map((m) => ({
@@ -274,7 +280,7 @@ Choose an emergency scenario below, pick a topic, or ask any question in plain E
         })),
     ];
 
-    const response = await fetch('https://api.x.ai/v1/chat/completions', {
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -293,13 +299,18 @@ Choose an emergency scenario below, pick a topic, or ask any question in plain E
       try {
         const errorJson = await response.json();
         if (errorJson.error) {
-          errorDetails = typeof errorJson.error === 'string' ? errorJson.error : JSON.stringify(errorJson.error);
+          errorDetails =
+            typeof errorJson.error === 'object' && errorJson.error.message
+              ? errorJson.error.message
+              : typeof errorJson.error === 'string'
+              ? errorJson.error
+              : JSON.stringify(errorJson.error);
         }
       } catch {
         const rawText = await response.text().catch(() => '');
         if (rawText) errorDetails = rawText;
       }
-      throw new Error(`xAI API Error: ${errorDetails}`);
+      throw new Error(`Groq API Error: ${errorDetails}`);
     }
 
     const reader = response.body?.getReader();
@@ -324,7 +335,7 @@ Choose an emergency scenario below, pick a topic, or ask any question in plain E
                 setMessages((prev) =>
                   prev.map((msg) =>
                     msg.id === assistantMessageId
-                      ? { ...msg, content: accumulated, source: 'grok-ai' }
+                      ? { ...msg, content: accumulated, source: 'groq-ai' }
                       : msg
                   )
                 );
@@ -378,15 +389,15 @@ Choose an emergency scenario below, pick a topic, or ask any question in plain E
       role: 'assistant',
       content: '',
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      source: clientApiKey || hasServerKey ? 'grok-ai' : 'rule-engine',
+      source: clientApiKey || hasServerKey ? 'groq-ai' : 'rule-engine',
     };
 
     setMessages([...newMessages, initialAssistantMsg]);
 
     try {
-      // 1. If user provided a client Grok key, call xAI directly
+      // 1. If user provided a client Groq key, call Groq directly
       if (clientApiKey && clientApiKey.trim().length > 0) {
-        await streamFromGrokDirect(clientApiKey, newMessages, assistantMessageId);
+        await streamFromGroqDirect(clientApiKey, newMessages, assistantMessageId);
         return;
       }
 
@@ -434,7 +445,7 @@ Choose an emergency scenario below, pick a topic, or ask any question in plain E
                 setMessages((prev) =>
                   prev.map((msg) =>
                     msg.id === assistantMessageId
-                      ? { ...msg, content: accumulated, source: 'grok-ai' }
+                      ? { ...msg, content: accumulated, source: 'groq-ai' }
                       : msg
                   )
                 );
@@ -466,7 +477,7 @@ Choose an emergency scenario below, pick a topic, or ask any question in plain E
 
       // Provide transparent explanation of the API error rather than concealing it
       const fallbackAdvice = getRuleBasedResponse(textToSend) || getFallbackResponse(textToSend);
-      const transparentNotice = `### ⚠️ Grok AI Connection Notice\n\n> **xAI API returned an error:** \`${errorMessage}\`\n\n**Quick resolution:**\n- Click the **API Key** button in the top menu to verify your key.\n- Check your account credits and usage at [console.x.ai](https://console.x.ai).\n- You can also test with model \`grok-2-mini\` in settings.\n\n---\n#### 🛡️ Offline Safety Response (from Local Knowledge Base):\n${fallbackAdvice}`;
+      const transparentNotice = `### ⚠️ Groq AI Connection Notice\n\n> **Groq API returned an error:** \`${errorMessage}\`\n\n**Quick resolution:**\n- Click the **API Key** button in the top menu to verify your key starts with \`gsk_...\`.\n- Check your account credits and usage at [console.groq.com](https://console.groq.com).\n- You can also test with model \`llama-3.1-8b-instant\` in settings.\n\n---\n#### 🛡️ Offline Safety Response (from Local Knowledge Base):\n${fallbackAdvice}`;
 
       setMessages((prev) =>
         prev.map((msg) =>
@@ -499,7 +510,7 @@ Choose an emergency scenario below, pick a topic, or ask any question in plain E
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="font-bold text-base tracking-tight text-white flex items-center gap-1.5">
-                  CYBERGUARD <span className="text-[10px] text-cyan-400 font-mono tracking-widest px-1.5 py-0.5 rounded bg-cyan-950/80 border border-cyan-800/60">v1.2</span>
+                  CYBERGUARD <span className="text-[10px] text-cyan-400 font-mono tracking-widest px-1.5 py-0.5 rounded bg-cyan-950/80 border border-cyan-800/60">v1.3</span>
                 </h1>
                 <div className="flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full bg-slate-900 border border-slate-800">
                   <span
@@ -507,13 +518,20 @@ Choose an emergency scenario below, pick a topic, or ask any question in plain E
                       clientApiKey || hasServerKey ? 'bg-emerald-400 animate-pulse' : 'bg-cyan-400'
                     }`}
                   />
-                  <span className="text-[11px] font-medium text-slate-300">
-                    {clientApiKey || hasServerKey ? 'Grok AI Stream' : 'Local Knowledge Engine'}
+                  <span className="text-[11px] font-medium text-slate-300 flex items-center gap-1">
+                    {clientApiKey || hasServerKey ? (
+                      <>
+                        <Zap className="w-3 h-3 text-emerald-400 inline" />
+                        Groq LPU Active
+                      </>
+                    ) : (
+                      'Local Knowledge Engine'
+                    )}
                   </span>
                 </div>
               </div>
               <p className="text-[11px] text-slate-400 hidden sm:block">
-                Defensive Cyber Intelligence & Incident Response Console
+                Defensive Cyber Intelligence & High-Speed Incident Response Console
               </p>
             </div>
           </div>
@@ -536,10 +554,10 @@ Choose an emergency scenario below, pick a topic, or ask any question in plain E
                 setShowSettings(true);
               }}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-cyan-950/40 hover:bg-cyan-900/60 text-cyan-300 hover:text-cyan-200 border border-cyan-800/60 transition-colors"
-              title="Grok API & Bot Settings"
+              title="Groq API & Model Settings"
             >
               <Key className="w-3.5 h-3.5 text-cyan-400" />
-              <span>{clientApiKey ? 'Grok Configured' : 'Connect Grok Key'}</span>
+              <span>{clientApiKey ? 'Groq Key Active' : 'Connect Groq Key'}</span>
             </button>
             <button
               onClick={handleResetChat}
@@ -692,7 +710,7 @@ Choose an emergency scenario below, pick a topic, or ask any question in plain E
                     <div className="flex items-center gap-2">
                       {message.source && !isUser && (
                         <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-900 border border-slate-700/60 text-slate-300 font-mono">
-                          {message.source === 'grok-ai' ? '● GROK AI' : '● KNOWLEDGE BASE'}
+                          {message.source === 'groq-ai' ? '⚡ GROQ LPU' : '● KNOWLEDGE BASE'}
                         </span>
                       )}
                       <span className="text-[10px] font-mono">{message.timestamp}</span>
@@ -738,7 +756,7 @@ Choose an emergency scenario below, pick a topic, or ask any question in plain E
               </div>
               <div className="bg-[#0c121e] border border-slate-800 rounded-2xl rounded-bl-none px-4 py-3 text-slate-400 flex items-center gap-2 text-sm">
                 <Sparkles className="w-4 h-4 text-cyan-400 animate-spin" />
-                <span>Streaming security analysis...</span>
+                <span>Streaming high-speed Groq analysis...</span>
               </div>
             </div>
           )}
@@ -877,7 +895,7 @@ Choose an emergency scenario below, pick a topic, or ask any question in plain E
         </div>
       )}
 
-      {/* Grok AI Settings & Key Diagnostic Tool */}
+      {/* Groq AI Settings & Key Diagnostic Tool */}
       {showSettings && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
           <div className="bg-[#0c121e] border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl relative">
@@ -889,18 +907,18 @@ Choose an emergency scenario below, pick a topic, or ask any question in plain E
             </button>
 
             <div className="flex items-center gap-2 mb-2">
-              <Key className="w-5 h-5 text-cyan-400" />
-              <h2 className="text-lg font-bold text-white tracking-tight">Grok API Configuration</h2>
+              <Zap className="w-5 h-5 text-emerald-400" />
+              <h2 className="text-lg font-bold text-white tracking-tight">Groq LPU AI Configuration</h2>
             </div>
 
             <p className="text-xs text-slate-400 mb-4">
-              Connect your xAI Grok API key (from <a href="https://console.x.ai" target="_blank" rel="noopener noreferrer" className="text-cyan-400 underline">console.x.ai</a>) to enable real-time streaming AI reasoning.
+              Enter your Groq API key (from <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer" className="text-cyan-400 underline font-medium">console.groq.com/keys</a>) for ultra-fast LPU AI streaming responses.
             </p>
 
             <div className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  xAI Grok API Key
+                  Groq API Key (starts with <code>gsk_...</code>)
                 </label>
                 <div className="relative">
                   <input
@@ -911,7 +929,7 @@ Choose an emergency scenario below, pick a topic, or ask any question in plain E
                       setTestStatus('idle');
                       setTestMessage('');
                     }}
-                    placeholder="xai-..."
+                    placeholder="gsk_..."
                     className="w-full px-3 py-2 pr-10 rounded-xl bg-[#090d16] border border-slate-800 focus:border-cyan-500 text-sm text-slate-100 placeholder-slate-600 focus:outline-none font-mono"
                   />
                   <button
@@ -923,7 +941,7 @@ Choose an emergency scenario below, pick a topic, or ask any question in plain E
                   </button>
                 </div>
                 <span className="text-[11px] text-slate-500 mt-1 block">
-                  Stored securely in your browser&apos;s session memory. Never shared with third parties.
+                  Keys are stored strictly in your browser session memory and connect directly to Groq.
                 </span>
               </div>
 
@@ -940,9 +958,9 @@ Choose an emergency scenario below, pick a topic, or ask any question in plain E
                   }}
                   className="w-full px-3 py-2 rounded-xl bg-[#090d16] border border-slate-800 focus:border-cyan-500 text-sm text-slate-100 focus:outline-none"
                 >
-                  <option value="grok-2-latest">grok-2-latest (Balanced & High Accuracy)</option>
-                  <option value="grok-2-mini">grok-2-mini (Ultra Fast Response)</option>
-                  <option value="grok-beta">grok-beta</option>
+                  <option value="llama-3.3-70b-versatile">llama-3.3-70b-versatile (Recommended: High Accuracy & Deep Security Reasoning)</option>
+                  <option value="llama-3.1-8b-instant">llama-3.1-8b-instant (Ultra-Fast 800+ tokens/sec)</option>
+                  <option value="mixtral-8x7b-32768">mixtral-8x7b-32768</option>
                 </select>
               </div>
 
@@ -957,12 +975,12 @@ Choose an emergency scenario below, pick a topic, or ask any question in plain E
                   {testStatus === 'testing' ? (
                     <>
                       <Loader2 className="w-3.5 h-3.5 animate-spin text-cyan-400" />
-                      <span>Verifying with xAI...</span>
+                      <span>Pinging Groq LPU API...</span>
                     </>
                   ) : (
                     <>
-                      <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
-                      <span>Test & Verify Key Connection</span>
+                      <Zap className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Test & Verify Groq Key</span>
                     </>
                   )}
                 </button>

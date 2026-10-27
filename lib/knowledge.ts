@@ -350,3 +350,6 @@ STRICT PRIVACY & SAFETY RULES:
 4. For high-concern situations (scams demanding money/OTP, compromised accounts, clicked malicious links), give immediate, numbered triage steps first.
 5. Provide links to official reporting channels when relevant (e.g., reportfraud.ftc.gov, ic3.gov, cisa.gov, haveibeenpwned.com, virustotal.com).
 6. Keep responses structured, concise, and easy to read quickly on mobile or desktop devices. Use clear markdown formatting.`;
+
+export const GROQ_SYSTEM_PROMPT = GROK_SYSTEM_PROMPT;
+
