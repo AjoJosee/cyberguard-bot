@@ -8,7 +8,6 @@ import {
   FileWarning,
   Send,
   RefreshCw,
-  Settings,
   ExternalLink,
   Copy,
   Check,
@@ -18,6 +17,12 @@ import {
   X,
   ChevronRight,
   Key,
+  Eye,
+  EyeOff,
+  Radio,
+  CheckCircle2,
+  XCircle,
+  Loader2,
 } from 'lucide-react';
 import { MarkdownView } from '@/components/MarkdownView';
 import {
@@ -46,12 +51,12 @@ export default function CyberGuardPage() {
       role: 'assistant',
       content: `### 👋 Welcome to CyberGuard AI
 
-I am your cybersecurity and online safety companion. Whether you want to learn safe digital habits or require **immediate triage for a suspected scam or breach**, I'm here to provide calm, step-by-step guidance.
+I am your cybersecurity advisor and emergency incident companion. Whether you need to verify a suspicious communication or require **immediate triage for a suspected breach or active scam**, I provide structured, calm guidance.
 
-> 🔒 **Privacy Guarantee**: I will **never** ask for your passwords, OTP codes, PINs, or financial details. Never enter sensitive credentials in chat.
+> 🔒 **Zero-Retention Privacy Guarantee**: CyberGuard will **never** ask for, store, or accept passwords, OTPs, PINs, or financial information. Never paste sensitive credentials in chat.
 
-#### Need Immediate Help?
-Select an **Emergency Triage** action below or ask any question about digital security:`,
+#### Quick Incident Triage:
+Choose an emergency scenario below, pick a topic, or ask any question in plain English:`,
       timestamp: 'Just now',
       source: 'rule-engine',
     },
@@ -67,6 +72,12 @@ Select an **Emergency Triage** action below or ask any question about digital se
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [inputWarning, setInputWarning] = useState<string | null>(null);
 
+  // Settings testing state
+  const [showKeyText, setShowKeyText] = useState(false);
+  const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+  const [testMessage, setTestMessage] = useState<string>('');
+  const [tempApiKey, setTempApiKey] = useState<string>('');
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -78,11 +89,11 @@ Select an **Emergency Triage** action below or ask any question about digital se
     scrollToBottom();
   }, [messages, isLoading]);
 
-  // Check backend server status and retrieve session key
+  // Check backend server status and retrieve local session key
   useEffect(() => {
     fetch('/api/chat')
       .then((res) => {
-        if (!res.ok) throw new Error('API not present (static mode)');
+        if (!res.ok) throw new Error('API not present (static host)');
         return res.json();
       })
       .then((data) => {
@@ -95,8 +106,14 @@ Select an **Emergency Triage** action below or ask any question about digital se
       });
 
     if (typeof window !== 'undefined') {
-      const savedKey = sessionStorage.getItem('cyberguard_grok_key') || localStorage.getItem('cyberguard_grok_key');
-      if (savedKey) setClientApiKey(savedKey);
+      const savedKey =
+        sessionStorage.getItem('cyberguard_grok_key') ||
+        localStorage.getItem('cyberguard_grok_key') ||
+        '';
+      if (savedKey) {
+        setClientApiKey(savedKey);
+        setTempApiKey(savedKey);
+      }
     }
   }, []);
 
@@ -113,13 +130,58 @@ Select an **Emergency Triage** action below or ask any question about digital se
     }
   };
 
-  const handleSaveSettings = (key: string, model: string) => {
-    setClientApiKey(key);
-    setSelectedModel(model);
+  // Test the entered Grok API Key directly against xAI API
+  const handleTestConnection = async () => {
+    const keyToTest = tempApiKey.trim();
+    if (!keyToTest) {
+      setTestStatus('error');
+      setTestMessage('Please enter an API key to test.');
+      return;
+    }
+
+    setTestStatus('testing');
+    setTestMessage('Connecting to xAI API...');
+
+    const startTime = performance.now();
+    try {
+      const res = await fetch('https://api.x.ai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${keyToTest}`,
+        },
+        body: JSON.stringify({
+          model: selectedModel,
+          messages: [{ role: 'user', content: 'Say OK' }],
+          max_tokens: 5,
+        }),
+      });
+
+      const elapsed = Math.round(performance.now() - startTime);
+
+      if (res.ok) {
+        setTestStatus('success');
+        setTestMessage(`✓ Connection verified! Grok responded in ${elapsed}ms.`);
+      } else {
+        const errorData = await res.json().catch(() => ({}));
+        const errMsg = errorData.error || errorData.message || `HTTP ${res.status} error`;
+        setTestStatus('error');
+        setTestMessage(`✕ xAI Error: ${errMsg}`);
+      }
+    } catch (err: unknown) {
+      const errStr = err instanceof Error ? err.message : String(err);
+      setTestStatus('error');
+      setTestMessage(`✕ Network failure: ${errStr}. (Check browser ad-blockers or CORS)`);
+    }
+  };
+
+  const handleSaveSettings = () => {
+    const cleanKey = tempApiKey.trim();
+    setClientApiKey(cleanKey);
     if (typeof window !== 'undefined') {
-      if (key) {
-        sessionStorage.setItem('cyberguard_grok_key', key);
-        localStorage.setItem('cyberguard_grok_key', key);
+      if (cleanKey) {
+        sessionStorage.setItem('cyberguard_grok_key', cleanKey);
+        localStorage.setItem('cyberguard_grok_key', cleanKey);
       } else {
         sessionStorage.removeItem('cyberguard_grok_key');
         localStorage.removeItem('cyberguard_grok_key');
@@ -139,7 +201,7 @@ Select an **Emergency Triage** action below or ask any question about digital se
       {
         id: 'welcome-reset',
         role: 'assistant',
-        content: `### 🛡️ CyberGuard Ready\n\nChat history reset. How can I assist with your cybersecurity or online privacy today?`,
+        content: `### 🛡️ CyberGuard Ready\n\nIncident log refreshed. How can I assist with your online security or threat inquiry?`,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         source: 'rule-engine',
       },
@@ -199,6 +261,19 @@ Select an **Emergency Triage** action below or ask any question about digital se
     history: Message[],
     assistantMessageId: string
   ) => {
+    // Sanitize history so it only sends valid conversation turns starting with first user prompt
+    const firstUserIndex = history.findIndex((m) => m.role === 'user');
+    const apiHistory = firstUserIndex !== -1 ? history.slice(firstUserIndex) : history;
+    const cleanPayloadMessages = [
+      { role: 'system', content: GROK_SYSTEM_PROMPT },
+      ...apiHistory
+        .filter((m) => !m.isSecurityAlert)
+        .map((m) => ({
+          role: m.role,
+          content: m.content,
+        })),
+    ];
+
     const response = await fetch('https://api.x.ai/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -207,20 +282,24 @@ Select an **Emergency Triage** action below or ask any question about digital se
       },
       body: JSON.stringify({
         model: selectedModel,
-        messages: [
-          { role: 'system', content: GROK_SYSTEM_PROMPT },
-          ...history.map((m) => ({
-            role: m.role,
-            content: m.content,
-          })),
-        ],
+        messages: cleanPayloadMessages,
         temperature: 0.3,
         stream: true,
       }),
     });
 
     if (!response.ok) {
-      throw new Error(`xAI API responded with status ${response.status}`);
+      let errorDetails = `HTTP ${response.status} ${response.statusText}`;
+      try {
+        const errorJson = await response.json();
+        if (errorJson.error) {
+          errorDetails = typeof errorJson.error === 'string' ? errorJson.error : JSON.stringify(errorJson.error);
+        }
+      } catch {
+        const rawText = await response.text().catch(() => '');
+        if (rawText) errorDetails = rawText;
+      }
+      throw new Error(`xAI API Error: ${errorDetails}`);
     }
 
     const reader = response.body?.getReader();
@@ -251,7 +330,7 @@ Select an **Emergency Triage** action below or ask any question about digital se
                 );
               }
             } catch {
-              // Ignore incomplete chunks
+              // Ignore incomplete chunk
             }
           }
         }
@@ -305,7 +384,7 @@ Select an **Emergency Triage** action below or ask any question about digital se
     setMessages([...newMessages, initialAssistantMsg]);
 
     try {
-      // 1. If user provided a client Grok key in settings/session, call xAI directly
+      // 1. If user provided a client Grok key, call xAI directly
       if (clientApiKey && clientApiKey.trim().length > 0) {
         await streamFromGrokDirect(clientApiKey, newMessages, assistantMessageId);
         return;
@@ -368,7 +447,7 @@ Select an **Emergency Triage** action below or ask any question about digital se
         // Fall through to client rule engine
       }
 
-      // 3. Instant Client-Side Rule Engine Fallback (ultra-fast, works 100% offline & on static pages)
+      // 3. Instant Local Knowledge Engine
       const ruleResponse = getRuleBasedResponse(textToSend) || getFallbackResponse(textToSend);
       setMessages((prev) =>
         prev.map((msg) =>
@@ -382,15 +461,19 @@ Select an **Emergency Triage** action below or ask any question about digital se
         )
       );
     } catch (err: unknown) {
-      console.error('Error in chat:', err);
-      // Graceful fallback
-      const fallback = getRuleBasedResponse(textToSend) || getFallbackResponse(textToSend);
+      console.error('Error during chat completion:', err);
+      const errorMessage = err instanceof Error ? err.message : String(err);
+
+      // Provide transparent explanation of the API error rather than concealing it
+      const fallbackAdvice = getRuleBasedResponse(textToSend) || getFallbackResponse(textToSend);
+      const transparentNotice = `### ⚠️ Grok AI Connection Notice\n\n> **xAI API returned an error:** \`${errorMessage}\`\n\n**Quick resolution:**\n- Click the **API Key** button in the top menu to verify your key.\n- Check your account credits and usage at [console.x.ai](https://console.x.ai).\n- You can also test with model \`grok-2-mini\` in settings.\n\n---\n#### 🛡️ Offline Safety Response (from Local Knowledge Base):\n${fallbackAdvice}`;
+
       setMessages((prev) =>
         prev.map((msg) =>
           msg.id === assistantMessageId
             ? {
                 ...msg,
-                content: fallback,
+                content: transparentNotice,
                 source: 'rule-engine-fallback',
               }
             : msg
@@ -402,29 +485,40 @@ Select an **Emergency Triage** action below or ask any question about digital se
   };
 
   return (
-    <div className="flex flex-col min-h-screen bg-slate-950 text-slate-100">
+    <div className="flex flex-col min-h-screen bg-[#06080f] text-slate-100 cyber-grid">
       {/* Top Header */}
-      <header className="sticky top-0 z-30 border-b border-slate-800/80 bg-slate-950/90 backdrop-blur-md px-4 py-3 sm:px-6">
+      <header className="sticky top-0 z-30 border-b border-slate-800/80 bg-[#06080f]/95 backdrop-blur-md px-4 py-3 sm:px-6">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
-          {/* Logo & Title */}
+          {/* Logo & Operational Status */}
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500 to-emerald-400 flex items-center justify-center shadow-lg shadow-cyan-500/20">
-              <Shield className="w-6 h-6 text-slate-950" />
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-cyan-500 to-emerald-400 p-[1px] shadow-lg shadow-cyan-500/10">
+              <div className="w-full h-full bg-[#0c121e] rounded-xl flex items-center justify-center">
+                <Shield className="w-5 h-5 text-cyan-400" />
+              </div>
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="font-bold text-lg text-white tracking-tight">CyberGuard</h1>
-                <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-cyan-950/80 text-cyan-300 border border-cyan-800/60">
-                  {clientApiKey || hasServerKey ? 'Grok AI Mode' : 'Knowledge Engine'}
-                </span>
+                <h1 className="font-bold text-base tracking-tight text-white flex items-center gap-1.5">
+                  CYBERGUARD <span className="text-[10px] text-cyan-400 font-mono tracking-widest px-1.5 py-0.5 rounded bg-cyan-950/80 border border-cyan-800/60">v1.2</span>
+                </h1>
+                <div className="flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full bg-slate-900 border border-slate-800">
+                  <span
+                    className={`w-2 h-2 rounded-full ${
+                      clientApiKey || hasServerKey ? 'bg-emerald-400 animate-pulse' : 'bg-cyan-400'
+                    }`}
+                  />
+                  <span className="text-[11px] font-medium text-slate-300">
+                    {clientApiKey || hasServerKey ? 'Grok AI Stream' : 'Local Knowledge Engine'}
+                  </span>
+                </div>
               </div>
-              <p className="text-xs text-slate-400 hidden sm:block">
-                Cybersecurity Guidance & Emergency Incident Triage
+              <p className="text-[11px] text-slate-400 hidden sm:block">
+                Defensive Cyber Intelligence & Incident Response Console
               </p>
             </div>
           </div>
 
-          {/* Action Buttons */}
+          {/* Action Bar */}
           <div className="flex items-center gap-2">
             <button
               onClick={() => setShowResources(true)}
@@ -435,17 +529,22 @@ Select an **Emergency Triage** action below or ask any question about digital se
               <span className="hidden sm:inline">Official Portals</span>
             </button>
             <button
-              onClick={() => setShowSettings(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 transition-colors"
+              onClick={() => {
+                setTempApiKey(clientApiKey);
+                setTestStatus('idle');
+                setTestMessage('');
+                setShowSettings(true);
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-cyan-950/40 hover:bg-cyan-900/60 text-cyan-300 hover:text-cyan-200 border border-cyan-800/60 transition-colors"
               title="Grok API & Bot Settings"
             >
-              <Key className="w-3.5 h-3.5 text-emerald-400" />
-              <span className="hidden sm:inline">API Key / Model</span>
+              <Key className="w-3.5 h-3.5 text-cyan-400" />
+              <span>{clientApiKey ? 'Grok Configured' : 'Connect Grok Key'}</span>
             </button>
             <button
               onClick={handleResetChat}
               className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
-              title="Clear Chat"
+              title="Clear Log"
             >
               <RefreshCw className="w-4 h-4" />
             </button>
@@ -453,81 +552,81 @@ Select an **Emergency Triage** action below or ask any question about digital se
         </div>
       </header>
 
-      {/* Mandatory Privacy & Safety Notice Banner */}
-      <div className="bg-amber-950/40 border-b border-amber-800/40 px-4 py-2 text-xs text-amber-300/90 flex items-center justify-center gap-2 text-center">
-        <Lock className="w-3.5 h-3.5 flex-shrink-0 text-amber-400" />
+      {/* Mandatory Privacy & Zero-Retention Notice */}
+      <div className="bg-[#120a0a]/90 border-b border-rose-950/60 px-4 py-2 text-xs text-rose-300/90 flex items-center justify-center gap-2 text-center">
+        <Lock className="w-3.5 h-3.5 flex-shrink-0 text-rose-400" />
         <span>
-          <strong>Privacy Notice</strong>: CyberGuard will <u>never</u> ask for or store passwords, OTPs, PINs, or banking details. Never disclose sensitive credentials in chat.
+          <strong>Air-Gap Privacy Guard</strong>: CyberGuard strictly rejects and redacts passwords, OTPs, PINs, and credit card numbers. Never disclose real secrets.
         </span>
       </div>
 
-      {/* Main Content Area */}
+      {/* Main Command Workspace */}
       <main className="flex-1 max-w-4xl w-full mx-auto p-4 sm:p-6 flex flex-col gap-4">
-        {/* Emergency Triage Quick-Action Cards (Step 3) */}
-        <section className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-4 sm:p-5 shadow-sm">
+        {/* Step 3: Emergency Incident Triage (Immediate Action Matrix) */}
+        <section className="bg-[#0c121e]/90 border border-slate-800/80 rounded-2xl p-4 sm:p-5 shadow-sm">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-rose-400">
-              <ShieldAlert className="w-4 h-4 animate-pulse" />
-              <span>High-Concern Incident Triage</span>
+              <Radio className="w-3.5 h-3.5 text-rose-400 animate-pulse" />
+              <span>Emergency Incident Triage</span>
             </div>
-            <span className="text-[11px] text-slate-400">Instant step-by-step guidance</span>
+            <span className="text-[11px] text-slate-400">Select for immediate step-by-step containment</span>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <button
               onClick={() => triggerEmergencyPlaybook('suspected-scam')}
-              className="flex flex-col text-left p-3.5 rounded-xl bg-slate-950/70 hover:bg-rose-950/30 border border-slate-800 hover:border-rose-700/60 transition-all group"
+              className="flex flex-col text-left p-3.5 rounded-xl bg-[#090d16] hover:bg-rose-950/20 border-l-4 border-l-rose-500 border border-slate-800/90 hover:border-rose-700/60 transition-all group"
             >
               <div className="flex items-center gap-2 text-rose-400 font-semibold text-sm mb-1">
                 <AlertTriangle className="w-4 h-4" />
                 <span>Suspected Scam</span>
               </div>
               <p className="text-xs text-slate-400 group-hover:text-slate-300 leading-normal">
-                Someone demands money, gift cards, OTPs, or remote screen access.
+                Pressured for money, gift cards, OTPs, or remote screen software.
               </p>
               <span className="mt-2 text-[11px] font-medium text-rose-400/90 flex items-center gap-1">
-                Open playbook <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
+                Containment steps <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
               </span>
             </button>
 
             <button
               onClick={() => triggerEmergencyPlaybook('compromised-account')}
-              className="flex flex-col text-left p-3.5 rounded-xl bg-slate-950/70 hover:bg-amber-950/30 border border-slate-800 hover:border-amber-700/60 transition-all group"
+              className="flex flex-col text-left p-3.5 rounded-xl bg-[#090d16] hover:bg-amber-950/20 border-l-4 border-l-amber-500 border border-slate-800/90 hover:border-amber-700/60 transition-all group"
             >
               <div className="flex items-center gap-2 text-amber-400 font-semibold text-sm mb-1">
                 <KeyRound className="w-4 h-4" />
                 <span>Compromised Account</span>
               </div>
               <p className="text-xs text-slate-400 group-hover:text-slate-300 leading-normal">
-                Account hacked, unauthorized logins, or locked out of email/social.
+                Unauthorized login, password changed, or account locked out.
               </p>
               <span className="mt-2 text-[11px] font-medium text-amber-400/90 flex items-center gap-1">
-                Lockdown steps <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
+                Lockdown checklist <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
               </span>
             </button>
 
             <button
               onClick={() => triggerEmergencyPlaybook('suspicious-links-files')}
-              className="flex flex-col text-left p-3.5 rounded-xl bg-slate-950/70 hover:bg-cyan-950/30 border border-slate-800 hover:border-cyan-700/60 transition-all group"
+              className="flex flex-col text-left p-3.5 rounded-xl bg-[#090d16] hover:bg-cyan-950/20 border-l-4 border-l-cyan-500 border border-slate-800/90 hover:border-cyan-700/60 transition-all group"
             >
               <div className="flex items-center gap-2 text-cyan-400 font-semibold text-sm mb-1">
                 <FileWarning className="w-4 h-4" />
                 <span>Suspicious Link / File</span>
               </div>
               <p className="text-xs text-slate-400 group-hover:text-slate-300 leading-normal">
-                How to verify safely, and emergency triage if you already clicked it.
+                Safe link inspection and post-click malware containment.
               </p>
               <span className="mt-2 text-[11px] font-medium text-cyan-400/90 flex items-center gap-1">
-                Verification & Triage <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
+                Triage & Scans <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
               </span>
             </button>
           </div>
         </section>
 
-        {/* 5 Core Cybersecurity Topics Quick Pills (Step 2) */}
+        {/* Step 2: Five Core Threat Domains */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none text-xs">
           <span className="text-slate-400 font-medium text-[11px] px-1 flex-shrink-0">
-            Topics:
+            Threat Domains:
           </span>
           <button
             onClick={() => triggerTopic('phishing')}
@@ -561,7 +660,7 @@ Select an **Emergency Triage** action below or ask any question about digital se
           </button>
         </div>
 
-        {/* Chat Messages Stream */}
+        {/* Chat Stream View */}
         <div className="flex-1 space-y-4 min-h-[360px]">
           {messages.map((message) => {
             const isUser = message.role === 'user';
@@ -571,7 +670,7 @@ Select an **Emergency Triage** action below or ask any question about digital se
                 className={`flex gap-3 ${isUser ? 'justify-end' : 'justify-start'}`}
               >
                 {!isUser && (
-                  <div className="w-8 h-8 rounded-lg bg-cyan-950 border border-cyan-800/60 flex items-center justify-center flex-shrink-0 mt-1 shadow-sm">
+                  <div className="w-8 h-8 rounded-lg bg-[#0c121e] border border-cyan-800/60 flex items-center justify-center flex-shrink-0 mt-1 shadow-sm">
                     <Shield className="w-4 h-4 text-cyan-400" />
                   </div>
                 )}
@@ -582,26 +681,26 @@ Select an **Emergency Triage** action below or ask any question about digital se
                       ? 'bg-cyan-600 text-white rounded-br-none'
                       : message.isSecurityAlert
                       ? 'bg-rose-950/40 border border-rose-800/80 text-rose-200 rounded-bl-none'
-                      : 'bg-slate-900 border border-slate-800/80 text-slate-200 rounded-bl-none'
+                      : 'bg-[#0c121e] border border-slate-800/80 text-slate-200 rounded-bl-none'
                   }`}
                 >
-                  {/* Top message info badge */}
-                  <div className="flex items-center justify-between gap-2 mb-1 text-[11px] opacity-75">
-                    <span className="font-medium">
-                      {isUser ? 'You' : 'CyberGuard'}
+                  {/* Top message telemetry */}
+                  <div className="flex items-center justify-between gap-2 mb-1.5 text-[11px] opacity-75">
+                    <span className="font-semibold tracking-wide">
+                      {isUser ? 'OPERATOR' : 'CYBERGUARD // ADVISOR'}
                     </span>
                     <div className="flex items-center gap-2">
                       {message.source && !isUser && (
-                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 border border-slate-700/60 text-slate-300">
-                          {message.source === 'grok-ai' ? '🤖 Grok AI' : '🛡️ Local Knowledge'}
+                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-900 border border-slate-700/60 text-slate-300 font-mono">
+                          {message.source === 'grok-ai' ? '● GROK AI' : '● KNOWLEDGE BASE'}
                         </span>
                       )}
-                      <span>{message.timestamp}</span>
+                      <span className="text-[10px] font-mono">{message.timestamp}</span>
                       {!isUser && (
                         <button
                           onClick={() => handleCopy(message.id, message.content)}
                           className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 hover:text-white"
-                          title="Copy response"
+                          title="Copy guidance"
                         >
                           {copiedId === message.id ? (
                             <Check className="w-3.5 h-3.5 text-emerald-400" />
@@ -624,7 +723,7 @@ Select an **Emergency Triage** action below or ask any question about digital se
                 </div>
 
                 {isUser && (
-                  <div className="w-8 h-8 rounded-lg bg-cyan-700 flex items-center justify-center flex-shrink-0 mt-1 text-white font-semibold text-xs">
+                  <div className="w-8 h-8 rounded-lg bg-cyan-800 flex items-center justify-center flex-shrink-0 mt-1 text-white font-semibold text-xs">
                     You
                   </div>
                 )}
@@ -634,12 +733,12 @@ Select an **Emergency Triage** action below or ask any question about digital se
 
           {isLoading && (
             <div className="flex gap-3 justify-start">
-              <div className="w-8 h-8 rounded-lg bg-cyan-950 border border-cyan-800 flex items-center justify-center flex-shrink-0 mt-1 animate-pulse">
+              <div className="w-8 h-8 rounded-lg bg-[#0c121e] border border-cyan-800 flex items-center justify-center flex-shrink-0 mt-1 animate-pulse">
                 <Shield className="w-4 h-4 text-cyan-400" />
               </div>
-              <div className="bg-slate-900 border border-slate-800 rounded-2xl rounded-bl-none px-4 py-3 text-slate-400 flex items-center gap-2 text-sm">
+              <div className="bg-[#0c121e] border border-slate-800 rounded-2xl rounded-bl-none px-4 py-3 text-slate-400 flex items-center gap-2 text-sm">
                 <Sparkles className="w-4 h-4 text-cyan-400 animate-spin" />
-                <span>Analyzing security inquiry...</span>
+                <span>Streaming security analysis...</span>
               </div>
             </div>
           )}
@@ -647,12 +746,12 @@ Select an **Emergency Triage** action below or ask any question about digital se
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Input Bar & Sensitivity Warning */}
+        {/* Threat Input Terminal */}
         <div className="sticky bottom-2 z-20 pt-2">
           {inputWarning && (
-            <div className="mb-2 p-2.5 rounded-xl bg-rose-950/90 border border-rose-800 text-rose-200 text-xs flex items-start gap-2 shadow-lg backdrop-blur-sm animate-fade-in">
+            <div className="mb-2 p-2.5 rounded-xl bg-rose-950/95 border border-rose-700 text-rose-200 text-xs flex items-start gap-2 shadow-xl backdrop-blur-md animate-fade-in">
               <AlertTriangle className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />
-              <div className="flex-1 leading-normal">
+              <div className="flex-1 leading-normal font-medium">
                 {inputWarning}
               </div>
               <button
@@ -669,7 +768,7 @@ Select an **Emergency Triage** action below or ask any question about digital se
               e.preventDefault();
               sendMessage();
             }}
-            className="flex items-end gap-2 bg-slate-900/90 backdrop-blur-md border border-slate-800/90 focus-within:border-cyan-500/70 rounded-2xl p-2 shadow-xl transition-all"
+            className="flex items-end gap-2 bg-[#0c121e]/95 backdrop-blur-md border border-slate-800 focus-within:border-cyan-500/80 rounded-2xl p-2 shadow-2xl transition-all"
           >
             <textarea
               ref={inputRef}
@@ -681,7 +780,7 @@ Select an **Emergency Triage** action below or ask any question about digital se
                   sendMessage();
                 }
               }}
-              placeholder="Ask about suspicious emails, passwords, scams, or WiFi safety (Never type real passwords/OTPs)..."
+              placeholder="Ask about a suspicious email, phone call, OTP request, or Wi-Fi security (Never type real secrets)..."
               rows={1}
               className="flex-1 bg-transparent border-0 text-slate-100 placeholder-slate-500 text-sm md:text-base focus:ring-0 focus:outline-none resize-none px-2 py-1.5 max-h-32"
             />
@@ -690,43 +789,43 @@ Select an **Emergency Triage** action below or ask any question about digital se
               type="submit"
               disabled={isLoading || !input.trim()}
               className="p-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 disabled:hover:bg-cyan-600 text-white font-medium transition-all shadow-md flex-shrink-0"
-              title="Send message"
+              title="Send inquiry"
             >
               <Send className="w-4 h-4" />
             </button>
           </form>
 
-          {/* Quick Fictional Scenario Starters */}
+          {/* Realistic Fictional Prompts */}
           <div className="mt-2 flex flex-wrap gap-1.5 items-center justify-center text-[11px] text-slate-500">
-            <span>Try asking:</span>
+            <span>Fictional Scenarios:</span>
             <button
-              onClick={() => sendMessage('I received an urgent email saying my bank account was suspended. How do I verify it?')}
+              onClick={() => sendMessage('I received an urgent email saying my bank account was suspended. How do I verify if it is real?')}
               className="hover:text-cyan-400 transition-colors underline decoration-dotted"
             >
               "Fake bank email"
             </button>
             <span>•</span>
             <button
-              onClick={() => sendMessage('What is the safest way to store passwords without forgetting them?')}
+              onClick={() => sendMessage('Someone is calling claiming to be fraud prevention and demands an SMS code. What do I do?')}
               className="hover:text-cyan-400 transition-colors underline decoration-dotted"
             >
-              "Best password habits"
+              "Caller asks for OTP"
             </button>
             <span>•</span>
             <button
-              onClick={() => sendMessage('Is hotel or coffee shop public Wi-Fi safe to use?')}
+              onClick={() => sendMessage('I accidentally clicked a strange link in an SMS message. Am I hacked?')}
               className="hover:text-cyan-400 transition-colors underline decoration-dotted"
             >
-              "Public Wi-Fi risks"
+              "Clicked weird SMS link"
             </button>
           </div>
         </div>
       </main>
 
-      {/* Official Resources Modal */}
+      {/* Official Portals Modal */}
       {showResources && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="bg-[#0c121e] border border-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto">
             <button
               onClick={() => setShowResources(false)}
               className="absolute top-4 right-4 text-slate-400 hover:text-white"
@@ -734,12 +833,12 @@ Select an **Emergency Triage** action below or ask any question about digital se
               <X className="w-5 h-5" />
             </button>
 
-            <div className="flex items-center gap-2 mb-4">
+            <div className="flex items-center gap-2 mb-3">
               <ExternalLink className="w-5 h-5 text-cyan-400" />
-              <h2 className="text-lg font-bold text-white">Official Reporting Portals</h2>
+              <h2 className="text-lg font-bold text-white tracking-tight">Authoritative Reporting & Threat Portals</h2>
             </div>
             <p className="text-xs text-slate-400 mb-4">
-              If you have encountered a cybercrime, financial fraud, or identity theft, report it directly to these official authorities:
+              If you have experienced financial fraud, an account hijacking, or active extortion, report it through official law enforcement and protective agencies:
             </p>
 
             <div className="space-y-3">
@@ -749,14 +848,14 @@ Select an **Emergency Triage** action below or ask any question about digital se
                   href={res.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="block p-3 rounded-xl bg-slate-950/80 border border-slate-800 hover:border-cyan-700/60 transition-colors group"
+                  className="block p-3 rounded-xl bg-[#090d16] border border-slate-800/80 hover:border-cyan-700/60 transition-colors group"
                 >
                   <div className="flex items-center justify-between mb-1">
                     <span className="font-semibold text-sm text-cyan-400 group-hover:text-cyan-300">
                       {res.name}
                     </span>
                     {res.badge && (
-                      <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-300">
+                      <span className="text-[10px] px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-300">
                         {res.badge}
                       </span>
                     )}
@@ -771,17 +870,17 @@ Select an **Emergency Triage** action below or ask any question about digital se
                 onClick={() => setShowResources(false)}
                 className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-white transition-colors"
               >
-                Close
+                Close Portals
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Settings Modal (Configuring Grok API Key / Model) */}
+      {/* Grok AI Settings & Key Diagnostic Tool */}
       {showSettings && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl relative">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="bg-[#0c121e] border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl relative">
             <button
               onClick={() => setShowSettings(false)}
               className="absolute top-4 right-4 text-slate-400 hover:text-white"
@@ -789,71 +888,107 @@ Select an **Emergency Triage** action below or ask any question about digital se
               <X className="w-5 h-5" />
             </button>
 
-            <div className="flex items-center gap-2 mb-3">
-              <Key className="w-5 h-5 text-emerald-400" />
-              <h2 className="text-lg font-bold text-white">Grok AI Configuration</h2>
+            <div className="flex items-center gap-2 mb-2">
+              <Key className="w-5 h-5 text-cyan-400" />
+              <h2 className="text-lg font-bold text-white tracking-tight">Grok API Configuration</h2>
             </div>
 
             <p className="text-xs text-slate-400 mb-4">
-              Enter your Grok API key (from <a href="https://console.x.ai" target="_blank" rel="noopener noreferrer" className="text-cyan-400 underline">console.x.ai</a>) to unlock real-time Grok reasoning. Keys can also be placed in the backend <code>.env.local</code>.
+              Connect your xAI Grok API key (from <a href="https://console.x.ai" target="_blank" rel="noopener noreferrer" className="text-cyan-400 underline">console.x.ai</a>) to enable real-time streaming AI reasoning.
             </p>
 
-            {/* Server Status Indicator */}
-            <div className="mb-4 p-3 rounded-xl bg-slate-950/80 border border-slate-800 text-xs flex items-center justify-between">
-              <span className="text-slate-400">Backend Server .env Key:</span>
-              <span
-                className={`font-semibold px-2 py-0.5 rounded ${
-                  hasServerKey
-                    ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
-                    : 'bg-slate-800 text-slate-400'
-                }`}
-              >
-                {hasServerKey ? '✓ Active in .env' : 'Not configured in .env'}
-              </span>
-            </div>
-
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                const form = e.target as HTMLFormElement;
-                const keyInput = (form.elements.namedItem('grokKey') as HTMLInputElement).value;
-                const modelSelect = (form.elements.namedItem('grokModel') as HTMLSelectElement).value;
-                handleSaveSettings(keyInput, modelSelect);
-              }}
-              className="space-y-4"
-            >
+            <div className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Grok API Key
+                  xAI Grok API Key
                 </label>
-                <input
-                  name="grokKey"
-                  type="password"
-                  defaultValue={clientApiKey}
-                  placeholder={hasServerKey ? "Using backend key (leave empty)" : "xai-..."}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 focus:border-cyan-500 text-sm text-slate-100 placeholder-slate-600 focus:outline-none"
-                />
+                <div className="relative">
+                  <input
+                    type={showKeyText ? 'text' : 'password'}
+                    value={tempApiKey}
+                    onChange={(e) => {
+                      setTempApiKey(e.target.value);
+                      setTestStatus('idle');
+                      setTestMessage('');
+                    }}
+                    placeholder="xai-..."
+                    className="w-full px-3 py-2 pr-10 rounded-xl bg-[#090d16] border border-slate-800 focus:border-cyan-500 text-sm text-slate-100 placeholder-slate-600 focus:outline-none font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowKeyText(!showKeyText)}
+                    className="absolute right-3 top-2.5 text-slate-400 hover:text-white"
+                  >
+                    {showKeyText ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
                 <span className="text-[11px] text-slate-500 mt-1 block">
-                  Keys entered here remain strictly in your browser session memory. Never sent to any third party.
+                  Stored securely in your browser&apos;s session memory. Never shared with third parties.
                 </span>
               </div>
 
+              {/* Model Choice */}
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Grok Model
+                  Model
                 </label>
                 <select
-                  name="grokModel"
-                  defaultValue={selectedModel}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 focus:border-cyan-500 text-sm text-slate-100 focus:outline-none"
+                  value={selectedModel}
+                  onChange={(e) => {
+                    setSelectedModel(e.target.value);
+                    setTestStatus('idle');
+                  }}
+                  className="w-full px-3 py-2 rounded-xl bg-[#090d16] border border-slate-800 focus:border-cyan-500 text-sm text-slate-100 focus:outline-none"
                 >
-                  <option value="grok-2-latest">grok-2-latest (Balanced & High Quality)</option>
+                  <option value="grok-2-latest">grok-2-latest (Balanced & High Accuracy)</option>
                   <option value="grok-2-mini">grok-2-mini (Ultra Fast Response)</option>
                   <option value="grok-beta">grok-beta</option>
                 </select>
               </div>
 
-              <div className="pt-2 flex justify-end gap-2">
+              {/* Live Connection Test Button */}
+              <div>
+                <button
+                  type="button"
+                  onClick={handleTestConnection}
+                  disabled={testStatus === 'testing' || !tempApiKey.trim()}
+                  className="w-full py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700/80 text-xs font-semibold text-slate-200 hover:text-white flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+                >
+                  {testStatus === 'testing' ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-cyan-400" />
+                      <span>Verifying with xAI...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+                      <span>Test & Verify Key Connection</span>
+                    </>
+                  )}
+                </button>
+
+                {/* Test Feedback Result */}
+                {testStatus !== 'idle' && (
+                  <div
+                    className={`mt-2 p-2.5 rounded-xl text-xs flex items-start gap-2 ${
+                      testStatus === 'success'
+                        ? 'bg-emerald-950/70 border border-emerald-800 text-emerald-300'
+                        : testStatus === 'error'
+                        ? 'bg-rose-950/70 border border-rose-800 text-rose-300'
+                        : 'bg-slate-900 text-slate-300'
+                    }`}
+                  >
+                    {testStatus === 'success' && <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />}
+                    {testStatus === 'error' && <XCircle className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />}
+                    <div className="flex-1 font-mono text-[11px] leading-tight break-all">
+                      {testMessage}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Actions */}
+              <div className="pt-2 flex justify-end gap-2 border-t border-slate-800">
                 <button
                   type="button"
                   onClick={() => setShowSettings(false)}
@@ -862,13 +997,14 @@ Select an **Emergency Triage** action below or ask any question about digital se
                   Cancel
                 </button>
                 <button
-                  type="submit"
-                  className="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-xs font-semibold text-white transition-colors"
+                  type="button"
+                  onClick={handleSaveSettings}
+                  className="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-xs font-semibold text-white transition-colors shadow-lg shadow-cyan-600/20"
                 >
-                  Save Settings
+                  Save Configuration
                 </button>
               </div>
-            </form>
+            </div>
           </div>
         </div>
       )}
