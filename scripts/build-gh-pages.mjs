@@ -10,8 +10,15 @@ const rootDir = path.resolve(__dirname, '..');
 const apiDir = path.join(rootDir, 'app', 'api');
 const apiBackupDir = path.join(rootDir, 'app', '_api_backup');
 const outDir = path.join(rootDir, 'out');
+const nextDir = path.join(rootDir, '.next');
 
 console.log('🚀 Preparing GitHub Pages static export...');
+
+// Clean previous build cache
+if (fs.existsSync(nextDir)) {
+  console.log('🧹 Cleaning .next directory...');
+  fs.rmSync(nextDir, { recursive: true, force: true });
+}
 
 let apiMoved = false;
 try {
