@@ -9,24 +9,24 @@ import {
   Send,
   RefreshCw,
   Settings,
-  HelpCircle,
   ExternalLink,
   Copy,
   Check,
   AlertTriangle,
   Lock,
-  Wifi,
   Sparkles,
-  UserCheck,
   X,
   ChevronRight,
-  Info,
+  Key,
 } from 'lucide-react';
 import { MarkdownView } from '@/components/MarkdownView';
 import {
   OFFICIAL_RESOURCES,
   EMERGENCY_PLAYBOOKS,
   TOPIC_KNOWLEDGE,
+  GROK_SYSTEM_PROMPT,
+  getRuleBasedResponse,
+  getFallbackResponse,
 } from '@/lib/knowledge';
 import { checkSensitiveInput } from '@/lib/security-rules';
 
@@ -46,12 +46,12 @@ export default function CyberGuardPage() {
       role: 'assistant',
       content: `### 👋 Welcome to CyberGuard AI
 
-I am your cybersecurity and online safety companion. Whether you need to learn safe habits or require **immediate triage for a real security emergency**, I'm here to provide calm, step-by-step guidance.
+I am your cybersecurity and online safety companion. Whether you want to learn safe digital habits or require **immediate triage for a suspected scam or breach**, I'm here to provide calm, step-by-step guidance.
 
-> 🔒 **Privacy Guarantee**: I will **never** ask for your passwords, OTP codes, PINs, or financial details. Never share sensitive credentials with any chat tool.
+> 🔒 **Privacy Guarantee**: I will **never** ask for your passwords, OTP codes, PINs, or financial details. Never enter sensitive credentials in chat.
 
 #### Need Immediate Help?
-Click an **Emergency Triage** action below or ask any question about online security:`,
+Select an **Emergency Triage** action below or ask any question about digital security:`,
       timestamp: 'Just now',
       source: 'rule-engine',
     },
@@ -70,7 +70,6 @@ Click an **Emergency Triage** action below or ask any question about online secu
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  // Auto-scroll to bottom of chat
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
@@ -79,20 +78,24 @@ Click an **Emergency Triage** action below or ask any question about online secu
     scrollToBottom();
   }, [messages, isLoading]);
 
-  // Check backend server status and API key availability
+  // Check backend server status and retrieve session key
   useEffect(() => {
     fetch('/api/chat')
-      .then((res) => res.json())
+      .then((res) => {
+        if (!res.ok) throw new Error('API not present (static mode)');
+        return res.json();
+      })
       .then((data) => {
         if (data.hasServerKey) {
           setHasServerKey(true);
         }
       })
-      .catch((err) => console.log('Status check:', err));
+      .catch(() => {
+        // Expected on static exports like GitHub Pages
+      });
 
-    // Retrieve any session-stored client API key
     if (typeof window !== 'undefined') {
-      const savedKey = sessionStorage.getItem('cyberguard_grok_key');
+      const savedKey = sessionStorage.getItem('cyberguard_grok_key') || localStorage.getItem('cyberguard_grok_key');
       if (savedKey) setClientApiKey(savedKey);
     }
   }, []);
@@ -116,8 +119,10 @@ Click an **Emergency Triage** action below or ask any question about online secu
     if (typeof window !== 'undefined') {
       if (key) {
         sessionStorage.setItem('cyberguard_grok_key', key);
+        localStorage.setItem('cyberguard_grok_key', key);
       } else {
         sessionStorage.removeItem('cyberguard_grok_key');
+        localStorage.removeItem('cyberguard_grok_key');
       }
     }
     setShowSettings(false);
@@ -185,8 +190,73 @@ Click an **Emergency Triage** action below or ask any question about online secu
   const triggerTopic = (topicKey: string) => {
     const topic = TOPIC_KNOWLEDGE[topicKey];
     if (!topic) return;
-
     sendMessage(`Tell me safe habits and red flags for ${topic.name}`);
+  };
+
+  // Direct client-side streaming from Grok API
+  const streamFromGrokDirect = async (
+    apiKey: string,
+    history: Message[],
+    assistantMessageId: string
+  ) => {
+    const response = await fetch('https://api.x.ai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey.trim()}`,
+      },
+      body: JSON.stringify({
+        model: selectedModel,
+        messages: [
+          { role: 'system', content: GROK_SYSTEM_PROMPT },
+          ...history.map((m) => ({
+            role: m.role,
+            content: m.content,
+          })),
+        ],
+        temperature: 0.3,
+        stream: true,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`xAI API responded with status ${response.status}`);
+    }
+
+    const reader = response.body?.getReader();
+    const decoder = new TextDecoder();
+    let accumulated = '';
+
+    if (reader) {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\n');
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed === 'data: [DONE]') continue;
+          if (trimmed.startsWith('data: ')) {
+            try {
+              const parsed = JSON.parse(trimmed.slice(6));
+              const delta = parsed.choices?.[0]?.delta?.content || '';
+              if (delta) {
+                accumulated += delta;
+                setMessages((prev) =>
+                  prev.map((msg) =>
+                    msg.id === assistantMessageId
+                      ? { ...msg, content: accumulated, source: 'grok-ai' }
+                      : msg
+                  )
+                );
+              }
+            } catch {
+              // Ignore incomplete chunks
+            }
+          }
+        }
+      }
+    }
   };
 
   // Send a message
@@ -229,79 +299,98 @@ Click an **Emergency Triage** action below or ask any question about online secu
       role: 'assistant',
       content: '',
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      source: hasServerKey || clientApiKey ? 'grok-ai' : 'rule-engine',
+      source: clientApiKey || hasServerKey ? 'grok-ai' : 'rule-engine',
     };
 
     setMessages([...newMessages, initialAssistantMsg]);
 
     try {
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
-      if (clientApiKey) {
-        headers['x-grok-api-key'] = clientApiKey;
+      // 1. If user provided a client Grok key in settings/session, call xAI directly
+      if (clientApiKey && clientApiKey.trim().length > 0) {
+        await streamFromGrokDirect(clientApiKey, newMessages, assistantMessageId);
+        return;
       }
 
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          messages: newMessages.map((m) => ({
-            role: m.role,
-            content: m.content,
-          })),
-          model: selectedModel,
-        }),
-      });
+      // 2. Otherwise attempt server route /api/chat (if server key exists)
+      try {
+        const response = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messages: newMessages.map((m) => ({
+              role: m.role,
+              content: m.content,
+            })),
+            model: selectedModel,
+          }),
+        });
 
-      const contentType = response.headers.get('content-type') || '';
-
-      // Check if response is JSON (Rule-based engine or alert)
-      if (contentType.includes('application/json')) {
-        const data = await response.json();
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === assistantMessageId
-              ? {
-                  ...msg,
-                  content: data.content,
-                  isSecurityAlert: data.isSecurityAlert,
-                  source: data.source || 'rule-engine',
-                }
-              : msg
-          )
-        );
-      } else {
-        // Streaming text from Grok API
-        const reader = response.body?.getReader();
-        const decoder = new TextDecoder();
-        let accumulated = '';
-
-        if (reader) {
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            const chunk = decoder.decode(value, { stream: true });
-            accumulated += chunk;
+        if (response.ok) {
+          const contentType = response.headers.get('content-type') || '';
+          if (contentType.includes('application/json')) {
+            const data = await response.json();
             setMessages((prev) =>
               prev.map((msg) =>
                 msg.id === assistantMessageId
-                  ? { ...msg, content: accumulated, source: 'grok-ai' }
+                  ? {
+                      ...msg,
+                      content: data.content,
+                      isSecurityAlert: data.isSecurityAlert,
+                      source: data.source || 'rule-engine',
+                    }
                   : msg
               )
             );
+            return;
+          } else {
+            // Stream SSE
+            const reader = response.body?.getReader();
+            const decoder = new TextDecoder();
+            let accumulated = '';
+            if (reader) {
+              while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                accumulated += decoder.decode(value, { stream: true });
+                setMessages((prev) =>
+                  prev.map((msg) =>
+                    msg.id === assistantMessageId
+                      ? { ...msg, content: accumulated, source: 'grok-ai' }
+                      : msg
+                  )
+                );
+              }
+            }
+            return;
           }
         }
+      } catch {
+        // Fall through to client rule engine
       }
-    } catch (err) {
-      console.error('Error sending message:', err);
+
+      // 3. Instant Client-Side Rule Engine Fallback (ultra-fast, works 100% offline & on static pages)
+      const ruleResponse = getRuleBasedResponse(textToSend) || getFallbackResponse(textToSend);
       setMessages((prev) =>
         prev.map((msg) =>
           msg.id === assistantMessageId
             ? {
                 ...msg,
-                content:
-                  '⚠️ **Connection Notice**: Unable to connect to the assistant service right now. Please check your network or try again. For urgent scam reporting, visit [FTC Report Fraud](https://reportfraud.ftc.gov).',
+                content: ruleResponse,
+                source: 'rule-engine',
+              }
+            : msg
+        )
+      );
+    } catch (err: unknown) {
+      console.error('Error in chat:', err);
+      // Graceful fallback
+      const fallback = getRuleBasedResponse(textToSend) || getFallbackResponse(textToSend);
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === assistantMessageId
+            ? {
+                ...msg,
+                content: fallback,
                 source: 'rule-engine-fallback',
               }
             : msg
@@ -326,7 +415,7 @@ Click an **Emergency Triage** action below or ask any question about online secu
               <div className="flex items-center gap-2">
                 <h1 className="font-bold text-lg text-white tracking-tight">CyberGuard</h1>
                 <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-cyan-950/80 text-cyan-300 border border-cyan-800/60">
-                  {hasServerKey || clientApiKey ? 'Grok AI Powered' : 'Knowledge Engine'}
+                  {clientApiKey || hasServerKey ? 'Grok AI Mode' : 'Knowledge Engine'}
                 </span>
               </div>
               <p className="text-xs text-slate-400 hidden sm:block">
@@ -350,8 +439,8 @@ Click an **Emergency Triage** action below or ask any question about online secu
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 transition-colors"
               title="Grok API & Bot Settings"
             >
-              <Settings className="w-3.5 h-3.5 text-emerald-400" />
-              <span className="hidden sm:inline">Settings</span>
+              <Key className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="hidden sm:inline">API Key / Model</span>
             </button>
             <button
               onClick={handleResetChat}
@@ -456,7 +545,7 @@ Click an **Emergency Triage** action below or ask any question about online secu
             onClick={() => triggerTopic('malware-downloads')}
             className="px-2.5 py-1 rounded-full bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white flex items-center gap-1.5 flex-shrink-0 transition-colors"
           >
-            🦠 Malware & Safe Downloads
+            🦠 Malware & Downloads
           </button>
           <button
             onClick={() => triggerTopic('public-wifi-vpn')}
@@ -468,7 +557,7 @@ Click an **Emergency Triage** action below or ask any question about online secu
             onClick={() => triggerTopic('social-engineering')}
             className="px-2.5 py-1 rounded-full bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white flex items-center gap-1.5 flex-shrink-0 transition-colors"
           >
-            🎭 Social Engineering & Privacy
+            🎭 Social Engineering
           </button>
         </div>
 
@@ -701,12 +790,12 @@ Click an **Emergency Triage** action below or ask any question about online secu
             </button>
 
             <div className="flex items-center gap-2 mb-3">
-              <Settings className="w-5 h-5 text-emerald-400" />
+              <Key className="w-5 h-5 text-emerald-400" />
               <h2 className="text-lg font-bold text-white">Grok AI Configuration</h2>
             </div>
 
             <p className="text-xs text-slate-400 mb-4">
-              Configure your Grok API key (from <a href="https://x.ai" target="_blank" rel="noopener noreferrer" className="text-cyan-400 underline">x.ai</a>) to enable real-time Grok AI completions. Keys can also be placed in the server's <code>.env</code> file.
+              Enter your Grok API key (from <a href="https://console.x.ai" target="_blank" rel="noopener noreferrer" className="text-cyan-400 underline">console.x.ai</a>) to unlock real-time Grok reasoning. Keys can also be placed in the backend <code>.env.local</code>.
             </p>
 
             {/* Server Status Indicator */}
@@ -719,7 +808,7 @@ Click an **Emergency Triage** action below or ask any question about online secu
                     : 'bg-slate-800 text-slate-400'
                 }`}
               >
-                {hasServerKey ? '✓ Detected in .env' : 'Not configured in .env'}
+                {hasServerKey ? '✓ Active in .env' : 'Not configured in .env'}
               </span>
             </div>
 
@@ -735,7 +824,7 @@ Click an **Emergency Triage** action below or ask any question about online secu
             >
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Session Grok API Key (Optional)
+                  Grok API Key
                 </label>
                 <input
                   name="grokKey"
@@ -745,7 +834,7 @@ Click an **Emergency Triage** action below or ask any question about online secu
                   className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 focus:border-cyan-500 text-sm text-slate-100 placeholder-slate-600 focus:outline-none"
                 />
                 <span className="text-[11px] text-slate-500 mt-1 block">
-                  Stored strictly in browser session memory. Never committed to git.
+                  Keys entered here remain strictly in your browser session memory. Never sent to any third party.
                 </span>
               </div>
 
